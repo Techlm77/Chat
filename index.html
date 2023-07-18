@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket chat</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+            line-height: 1.5;
+            background-color: #202020;
+            color: #dfdbdb;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            font-weight: 600;
+        }
+
+        a:link {
+            color: grey;
+        }
+
+        /* visited link */
+        a:visited {
+            color: pink;
+        }
+
+        /* mouse over link */
+        a:hover {
+            color: orange;
+        }
+
+        /* selected link */
+        a:active {
+            color: lightgreen;
+        }
+
+        /* Layout */
+        header,
+        footer {
+            background-color: #202020;
+            color: white;
+            padding: 10px;
+            text-align: center;
+        }
+
+        #chat-container {
+            max-width: 600px;
+            margin: 2rem auto;
+            padding: 1rem;
+            background-color: #333;
+            border-radius: 0.5rem;
+            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
+        }
+
+        #chat-messages {
+            width: 100%;
+            height: 50vh;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        div.message {
+            opacity: 0;
+            animation: fade-in 0.5s ease forwards;
+        }
+
+        @keyframes fade-in {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Form */
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 1rem;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 0.75rem;
+            border: 2px solid #00ff64;
+            border-radius: 0.25rem;
+            color: #dfdbdb;
+            background-color: transparent;
+            transition: all 0.2s ease;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #34ff34;
+        }
+
+        .button-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .button-primary,
+        .button-secondary {
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .button-primary {
+            background-color: #00ff64;
+            color: #333;
+            border: none;
+        }
+
+        .button-primary:hover {
+            background-color: #34ff34;
+            color: #333;
+        }
+
+        .button-secondary {
+            background-color: transparent;
+            color: #dfdbdb;
+            border: 2px solid #dfdbdb;
+        }
+
+        .button-secondary:hover {
+            background-color: #dfdbdb;
+            color: #333;
+        }
+
+        /* Message colors */
+        div.message.green {
+            color: #34ff34;
+        }
+
+        div.message.red {
+            color: #ff3e3e;
+        }
+
+        div.message.blue {
+            color: #3e34ff;
+        }
+
+        #console-logs {
+            position: fixed;
+            top: 10px;
+            left: 0;
+            width: 100%;
+            padding: 10px;
+            color: #ffffff61;
+            overflow: hidden;
+            z-index: 9999;
+        }
+
+        .console-logs-label {
+            font-size: 14px;
+            margin-bottom: 5px;
+            position: fixed;
+        }
+
+        .console-log-entry {
+            margin-bottom: 5px;
+        }
+
+        .chat-image {
+            max-width: 50%;
+            height: auto;
+            margin-top: 5px;
+        }
+
+        /* Responsive Layout */
+        @media (max-width: 600px) {
+            #chat-container {
+                margin: 1rem;
+                padding: 0.5rem;
+            }
+
+            .button-group {
+                flex-direction: column;
+                align-items: center;
+                gap: 0.5rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="console-logs-label">Console Logs: <div id="console-logs" class="console-logs"></div>
+    </div>
+    <header>
+        <h1>Websocket Chat</h1>
+    </header>
+    <main>
+        <div id="chat-container">
+            <div id="chat-messages" class="chat-messages"></div>
+            <form id="chat-form">
+                <div class="input-group">
+                    <input type="text" name="message" id="message-input" placeholder="Enter a message..."
+                        maxlength="500" autocomplete="off">
+                    <button type="submit" class="button-primary">Send</button>
+                </div>
+                <div class="button-group">
+                    <button id="username-button" class="button-secondary">Username</button>
+                    <button id="disconnect-button" class="button-secondary">Disconnect</button>
+                    <button id="notification-button" class="button-secondary" onclick="isNotificationEnabled()">Check
+                        for Notification</button>
+                    <button id="help-button" class="button-secondary">Help</button>
+                </div>
+            </form>
+        </div>
+    </main>
+    <footer>
+        <p>&copy; 2023 WebSocket Chat</p>
+    </footer>
+    <script>
+        // Determine the WebSocket URL for the server
+        const serverUrl = 'wss://chat.techlm77.co.uk:8443/ws';
+
+        let websocket;
+
+        // Function to create a new WebSocket object and connect to the server
+        function connectToServer() {
+            // Create a new WebSocket object to connect to the server using the determined URL
+            websocket = new WebSocket(serverUrl);
+
+            // Add event listeners for WebSocket events
+            websocket.addEventListener('open', onOpen);
+            websocket.addEventListener('close', onClose);
+            websocket.addEventListener('error', onError);
+            websocket.addEventListener('message', onMessage);
+        }
+
+        // Function to handle the WebSocket connection open event
+        function onOpen() {
+            console.log('Connected to server:', serverUrl);
+            logToConsole('Connected to server: ' + serverUrl);
+            MessageAdd('<div class="message green">You have entered the chat room.</div>');
+
+            // Display the user's username if it exists, otherwise prompt the user to enter a username
+            if (localStorage.getItem('username')) {
+                MessageAdd('<div class="message">Welcome, ' + localStorage.getItem('username') + '</div>');
+            } else {
+                setUsername();
+            }
+
+            // Define the auto message to send
+            const autoMessage = 'Hello, I have joined the chat room!';
+
+            // Sanitize the message and username
+            const username = localStorage.getItem('username');
+            const sanitizedMessage = sanitize(autoMessage);
+            const sanitizedUsername = sanitize(username);
+
+            // Construct the message data
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const data = `${hours}:${minutes} - ${sanitizedUsername}: ${sanitizedMessage}`;
+
+            // Send the message to the server
+            websocket.send(data);
+        }
+
+        // Function to handle the WebSocket connection close event
+        function onClose() {
+            console.log('Disconnected from server:', serverUrl);
+            logToConsole('Disconnected from server: ' + serverUrl);
+            // Display a message to indicate the connection status
+            MessageAdd('<div class="message blue">You have been disconnected.</div>');
+
+            // Display a notification
+            if (isNotificationEnabled()) {
+                new Notification('Disconnected', {
+                    body: 'You have been disconnected from the chat server.',
+                    icon: 'favicon.ico'
+                });
+            }
+        }
+
+        // Function to handle the WebSocket error event
+        function onError(event) {
+            const errorMessage = event.message || 'Connection to chat failed';
+            console.error('WebSocket error:', errorMessage);
+            logToConsole('WebSocket error: ' + errorMessage);
+            // Display a message to indicate the connection status
+            MessageAdd('<div class="message red">Connection to chat failed.</div>');
+        }
+
+        // Function to handle the WebSocket message event
+        function onMessage(event) {
+            // Parse the message data and display the message in the chat window
+            const messageText = event.data;
+            const messageType = 'message';
+            if (messageType === 'message') {
+                const sanitizedMessageText = sanitize(messageText);
+                const messageWithLinks = makeLinksClickable(sanitizedMessageText);
+                MessageAdd('<div class="message">' + messageWithLinks + '</div>');
+
+                // Display a notification if the chat window is not in focus
+                if (!document.hasFocus() && isNotificationEnabled()) {
+                    new Notification('New message', {
+                        body: sanitizedMessageText,
+                        icon: 'favicon.ico'
+                    });
+                }
+            }
+        }
+
+        // Function to add console logs to the console logs div for a certain duration
+        function logToConsole(log) {
+            const consoleLogs = document.getElementById('console-logs');
+            const logMessage = document.createElement('div');
+            logMessage.textContent = log;
+            consoleLogs.appendChild(logMessage);
+
+            setTimeout(() => {
+                consoleLogs.removeChild(logMessage);
+            }, 15000); // Remove the log message after 15 seconds
+        }
+
+        // If notificationsEnabled is true, you can display a notification. If it is false, you can skip displaying the notification.
+        function isNotificationEnabled() {
+            if (!('Notification' in window)) { // Check if notifications are supported in the browser
+                console.warn('Notifications not supported in this browser');
+                logToConsole('Notifications not supported in this browser');
+                return false;
+            } else if (Notification.permission === 'granted') { // Check if permission has already been granted
+                logToConsole('Notifications has already been granted');
+                return true;
+            } else if (Notification.permission !== 'denied') { // Check if permission has not yet been granted or denied
+                Notification.requestPermission().then(permission => { // Request permission
+                    if (permission === 'granted') { // If permission is granted
+                        logToConsole('Notifications has been successfully granted');
+                        return true;
+                    } else { // If permission is denied
+                        console.warn('User denied notification permission');
+                        logToConsole('Notifications has been denied');
+                        return false;
+                    }
+                });
+            } else { // If permission has already been denied
+                console.warn('User has denied notification permission');
+                return false;
+            }
+        }
+
+        // Define an array of banned words
+        const bannedWords = ['pop'];
+
+        // Function to set the user's username
+        function setUsername() {
+            const bannedUsernames = ['pop'];
+            let username = window.prompt('Enter your username:', '');
+
+            // Check that the username is at least two characters long and not null or empty
+            if (username && username.trim().length > 2) {
+                // Check if the username contains any banned words
+                const bannedWordPattern = new RegExp(`\\b(${bannedUsernames.join('|')})\\b`, 'i');
+                if (bannedWordPattern.test(username)) {
+                    username = Math.random().toString(36).substr(2, 5); // Generate a random username
+                    console.log('Banned username detected. Changing username to', username);
+                }
+                localStorage.setItem('username', username.trim());
+
+                // Display a message to indicate the user's username has been set
+                MessageAdd(`<div class="message">Welcome, ${localStorage.getItem('username')}</div>`);
+            } else {
+                alert('Your username must be at least two characters.');
+                setUsername();
+            }
+        }
+
+        // Add an event listener for the chat form submission
+        document.getElementById('chat-form').addEventListener('submit', (event) => {
+            event.preventDefault();
+            handleSubmit();
+        });
+
+        // Function to handle the chat form submission
+        function handleSubmit() {
+            // Get the message input and trim whitespace from the message
+            const message_element = document.getElementById('message-input');
+            const message = message_element.value.trim();
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+
+            // If the message is not empty, sanitize the message and username and send it to the server
+            if (message.length) {
+                const username = localStorage.getItem('username');
+                const sanitizedMessage = sanitize(message);
+                const sanitizedUsername = sanitize(username);
+
+                // Replace all banned words with a randomized version
+                const data = `${hours}:${minutes} - ${sanitizedUsername}: ${sanitizedMessage.replace(new RegExp(bannedWords.join('|'), 'gi'), match => {
+                    const length = match.length;
+                    return Array.from({ length }, () => String.fromCharCode(Math.random() * 26 + 97)).join('');
+                })}`;
+
+                websocket.send(data);
+
+                // Clear the message input field
+                message_element.value = '';
+            }
+        }
+
+        // Function to add a message to the chat window
+        function MessageAdd(message) {
+            const chat_messages = document.getElementById('chat-messages');
+            const messageContainer = document.createElement('div');
+            messageContainer.classList.add('fade-in');
+            messageContainer.innerHTML = message;
+            chat_messages.appendChild(messageContainer);
+            chat_messages.scrollTop = chat_messages.scrollHeight;
+        }
+
+        // Function to make links in messages clickable and display images if the URL is an image
+        function makeLinksClickable(message) {
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            return message.replace(urlRegex, (url) => {
+                const isImage = /\.(png|jpe?g)$/i.test(url); // Check if the URL ends with .png, .jpg, or .jpeg
+                if (isImage) {
+                    return `<img src="${url}" alt="Image" class="chat-image">`;
+                } else {
+                    return `<a href="${url}" target="_blank">${url}</a>`;
+                }
+            });
+        }
+
+        // Function to sanitize user input to prevent cross-site scripting attacks
+        function sanitize(input) {
+            const temp = document.createElement('div');
+            temp.textContent = input;
+            return temp.innerHTML;
+        }
+
+        // Add an event listener for the disconnect button
+        document.getElementById('disconnect-button').addEventListener('click', () => {
+            websocket.close();
+        });
+
+        // Add an event listener for the username button to prompt the user to set a new username
+        document.getElementById('username-button').addEventListener('click', () => {
+            localStorage.removeItem('username');
+            setUsername();
+        });
+
+        // Add an event listener for the help button to display a help message
+        document.getElementById('help-button').addEventListener('click', () => {
+            logToConsole('Type your message in the input box and press enter or click send to send a message.');
+            logToConsole('Click the username button to set a new username.');
+            logToConsole('Click the disconnect button to disconnect from the chat room.');
+            logToConsole('Click the check for Notification button to enable or disable message notifications.');
+        });
+
+        // Call the connectToServer function to establish the initial WebSocket connection
+        connectToServer();
+
+    </script>
+</body>
+
+</html>
